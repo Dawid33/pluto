@@ -138,14 +138,12 @@ pub fn init(allocator: Allocator, mem_profile: *const mem.MemProfile) Allocator.
     tasks = TailQueue(*Task){};
 
     // Set up the init task to continue execution
-    current_task = try allocator.create(Task);
+    current_task = try Task.create(0, true, &vmm.kernel_vmm, allocator);
     errdefer allocator.destroy(current_task);
-    // PID 0
-    current_task.pid = 0;
+
+    allocator.free(current_task.kernel_stack);
     const kernel_stack_size = @ptrToInt(&KERNEL_STACK_END) - @ptrToInt(&KERNEL_STACK_START);
     current_task.kernel_stack = @intToPtr([*]u32, @ptrToInt(&KERNEL_STACK_START))[0..kernel_stack_size];
-    current_task.user_stack = &[_]usize{};
-    current_task.kernel = true;
     // ESP will be saved on next schedule
 
     // Run the runtime tests here
@@ -195,10 +193,11 @@ test "pickNextTask" {
     tasks = TailQueue(*Task){};
 
     // Set up a current task
-    var first = try allocator.create(Task);
+    var first = try Task.create(0, true, &vmm.kernel_vmm, allocator);
     // We use an intermediary variable to avoid a double-free.
     // Deferring freeing current_task will free whatever current_task points to at the end
-    defer allocator.destroy(first);
+    defer first.destroy(allocator);
+    allocator.free(first.kernel_stack);
     current_task = first;
     current_task.pid = 0;
     current_task.kernel_stack = @intToPtr([*]u32, @ptrToInt(&KERNEL_STACK_START))[0..4096];
