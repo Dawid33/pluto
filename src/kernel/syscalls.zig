@@ -17,7 +17,7 @@ var allocator: std.mem.Allocator = undefined;
 /// The maximum amount of data to allocate when copying user memory into kernel memory
 pub const USER_MAX_DATA_LEN = 16 * 1024;
 
-pub const Error = error{ NoMoreFSHandles, TooBig };
+pub const Error = error{ NoMoreFSHandles, TooBig, NotAFile };
 
 /// All implemented syscalls
 pub const Syscall = enum {
@@ -42,6 +42,26 @@ pub const Syscall = enum {
     ///     Refer to vfs.Error for details on what causes vfs errors
     ///
     Open,
+
+    /// Read data from an open vfs file
+    ///
+    /// Arguments:
+    ///     node_handle: usize  - The file handle returned from the open syscall
+    ///     buff_ptr: usize `   - The user/kernel address of the buffer to put the read data in
+    ///     buff_len: usize     - The size of the buffer
+    ///     ignored1: usize     - Ignored
+    ///     ignored2: usize     - Ignored
+    ///
+    /// Return: usize
+    ///     The number of bytes read and put into the buffer
+    ///
+    /// Error:
+    ///     OutOfBounds         - The node handle is outside of the maximum per process
+    ///     TooBig              - The buffer is bigger than what a user process is allowed to give the kernel
+    ///     NotAFile            - The handle does not correspond to a file
+    ///     Refer to vfs.FileNode.read and vmm.VirtualMemoryManager.copyData for details on what causes other errors
+    ///
+    Read,
     Test1,
     Test2,
     Test3,
@@ -58,6 +78,7 @@ pub const Syscall = enum {
     fn getHandler(self: @This()) Handler {
         return switch (self) {
             .Open => handleOpen,
+            .Read => handleRead,
             .Test1 => handleTest1,
             .Test2 => handleTest2,
             .Test3 => handleTest3,
@@ -216,6 +237,55 @@ fn handleOpen(ctx: *const arch.CpuState, path_ptr: usize, path_len: usize, flags
     return (try current_task.addVFSHandle(node)) orelse panic(null, "Failed to add a VFS handle to current_task\n", .{});
 }
 
+/// Read data from an open vfs file
+///
+/// Arguments:
+///     node_handle: usize  - The file handle returned from the open syscall
+///     buff_ptr: usize `   - The user/kernel address of the buffer to put the read data in
+///     buff_len: usize     - The size of the buffer
+///     ignored1: usize     - Ignored
+///     ignored2: usize     - Ignored
+///
+/// Return: usize
+///     The number of bytes read and put into the buffer
+///
+/// Error:
+///     OutOfBounds         - The node handle is outside of the maximum per process
+///     TooBig              - The buffer is bigger than what a user process is allowed to give the kernel
+///     NotAFile            - The handle does not correspond to a file
+///     NotOpened           - The handle doesn't correspond to an opened file
+///     Refer to vfs.FileNode.read and vmm.VirtualMemoryManager.copyData for details on what causes other errors
+///
+fn handleRead(ctx: *const arch.CpuState, node_handle: usize, buff_ptr: usize, buff_len: usize, ignored1: usize, ignored2: usize) anyerror!usize {
+    _ = ctx;
+    _ = ignored1;
+    _ = ignored2;
+    if (node_handle >= task.VFS_HANDLES_PER_PROCESS)
+        return error.OutOfBounds;
+    const real_handle = @intCast(task.Handle, node_handle);
+    if (buff_len > USER_MAX_DATA_LEN) {
+        return Error.TooBig;
+    }
+
+    const current_task = scheduler.current_task;
+    const node_opt = current_task.getVFSHandle(real_handle) catch panic(@errorReturnTrace(), "Failed to get VFS node for handle {}\n", .{real_handle});
+    if (node_opt) |node| {
+        const file = switch (node.*) {
+            .File => |*f| f,
+            else => return error.NotAFile,
+        };
+        var buff = if (current_task.kernel) @intToPtr([*]u8, buff_ptr)[0..buff_len] else try allocator.alloc(u8, buff_len);
+        defer if (!current_task.kernel) allocator.free(buff);
+
+        const bytes_read = try file.read(buff);
+        // TODO: A more performant method would be mapping in the user memory and using that directly. Then we wouldn't need to allocate or copy the buffer
+        if (!current_task.kernel) try vmm.kernel_vmm.copyData(current_task.vmm, true, buff, buff_ptr);
+        return bytes_read;
+    }
+
+    return error.NotOpened;
+}
+
 pub fn handleTest1(ctx: *const arch.CpuState, arg1: usize, arg2: usize, arg3: usize, arg4: usize, arg5: usize) anyerror!usize {
     // Suppress unused variable warnings
     _ = ctx;
@@ -279,6 +349,7 @@ test "getHandler" {
     try std.testing.expectEqual(Syscall.Test2.getHandler(), handleTest2);
     try std.testing.expectEqual(Syscall.Test3.getHandler(), handleTest3);
     try std.testing.expectEqual(Syscall.Open.getHandler(), handleOpen);
+    try std.testing.expectEqual(Syscall.Read.getHandler(), handleRead);
 }
 
 test "handle" {
@@ -349,6 +420,110 @@ test "handleOpen" {
     try testing.expectEqual(testfs.tree.children.items[1].children.items.len, 1);
     try testing.expect(test_node.isFile());
     try testing.expectEqual(&test_node.File, &tree.val.File);
+}
+
+test "handleRead" {
+    allocator = std.testing.allocator;
+    var testfs = try vfs.testInitFs(allocator);
+    defer allocator.destroy(testfs);
+    defer testfs.deinit();
+
+    testfs.instance = 1;
+    try vfs.setRoot(testfs.tree.val);
+
+    var fixed_buffer_allocator = try testInitMem(1, allocator, true);
+    var buffer_allocator = fixed_buffer_allocator.allocator();
+    defer testDeinitMem(allocator, fixed_buffer_allocator);
+    scheduler.current_task = try task.Task.create(0, true, &vmm.kernel_vmm, allocator);
+    defer scheduler.current_task.destroy(allocator);
+    _ = scheduler.current_task;
+
+    const empty = arch.CpuState.empty();
+
+    var test_file_path = try buffer_allocator.dupe(u8, "/foo.txt");
+    var test_file = @intCast(task.Handle, try handleOpen(&empty, @ptrToInt(test_file_path.ptr), test_file_path.len, @enumToInt(vfs.OpenFlags.CREATE_FILE), 0, undefined));
+    var f_data = &testfs.tree.children.items[0].data;
+    var str = "test123";
+    f_data.* = try testing.allocator.dupe(u8, str);
+
+    var buffer: [str.len]u8 = undefined;
+    {
+        const length = try handleRead(&empty, test_file, @ptrToInt(&buffer[0]), buffer.len, 0, undefined);
+        try testing.expect(std.mem.eql(u8, str, buffer[0..length]));
+    }
+
+    {
+        const length = try handleRead(&empty, test_file, @ptrToInt(&buffer[0]), buffer.len + 1, 0, undefined);
+        try testing.expect(std.mem.eql(u8, str, buffer[0..length]));
+    }
+
+    {
+        const length = try handleRead(&empty, test_file, @ptrToInt(&buffer[0]), buffer.len + 3, 0, undefined);
+        try testing.expect(std.mem.eql(u8, str, buffer[0..length]));
+    }
+
+    {
+        const length = try handleRead(&empty, test_file, @ptrToInt(&buffer[0]), buffer.len - 1, 0, undefined);
+        try testing.expect(std.mem.eql(u8, str[0 .. str.len - 1], buffer[0..length]));
+    }
+
+    {
+        const length = try handleRead(&empty, test_file, @ptrToInt(&buffer[0]), 0, 0, undefined);
+        try testing.expect(std.mem.eql(u8, str[0..0], buffer[0..length]));
+    }
+    // Try reading from a symlink
+    var args = try buffer_allocator.create(vfs.OpenArgs);
+    args.* = vfs.OpenArgs{ .symlink_target = test_file_path };
+    var link = try buffer_allocator.dupe(u8, "/link");
+    var test_link = @intCast(task.Handle, try handleOpen(&empty, @ptrToInt(link.ptr), link.len, @enumToInt(vfs.OpenFlags.CREATE_SYMLINK), @ptrToInt(args), undefined));
+    {
+        const length = try handleRead(&empty, test_link, @ptrToInt(&buffer[0]), buffer.len, 0, undefined);
+        try testing.expect(std.mem.eql(u8, str[0..str.len], buffer[0..length]));
+    }
+}
+
+test "handleRead errors" {
+    allocator = std.testing.allocator;
+    var testfs = try vfs.testInitFs(allocator);
+    {
+        defer allocator.destroy(testfs);
+        defer testfs.deinit();
+
+        testfs.instance = 1;
+        try vfs.setRoot(testfs.tree.val);
+
+        const empty = arch.CpuState.empty();
+
+        // The data we pass to handleRead needs to be mapped within the VMM, so we need to know their address
+        // Allocating the data within a fixed buffer allocator is the best way to know the address of the data
+        var fixed_buffer_allocator = try testInitMem(3, allocator, true);
+        var buffer_allocator = fixed_buffer_allocator.allocator();
+        defer testDeinitMem(allocator, fixed_buffer_allocator);
+
+        scheduler.current_task = try task.Task.create(0, true, &vmm.kernel_vmm, allocator);
+        defer scheduler.current_task.destroy(allocator);
+
+        // Invalid file handle
+        try testing.expectError(error.OutOfBounds, handleRead(&empty, task.VFS_HANDLES_PER_PROCESS, 0, 0, 0, 0));
+        try testing.expectError(error.OutOfBounds, handleRead(&empty, task.VFS_HANDLES_PER_PROCESS + 1, 0, 0, 0, 0));
+
+        // Unopened file
+        try testing.expectError(error.NotOpened, handleRead(&empty, 0, 0, 0, 0, 0));
+        try testing.expectError(error.NotOpened, handleRead(&empty, 1, 0, 0, 0, 0));
+        try testing.expectError(error.NotOpened, handleRead(&empty, task.VFS_HANDLES_PER_PROCESS - 1, 0, 0, 0, 0));
+
+        // Reading from a dir
+        const name = try buffer_allocator.dupe(u8, "/dir");
+        const node = try handleOpen(&empty, @ptrToInt(name.ptr), name.len, @enumToInt(vfs.OpenFlags.CREATE_DIR), 0, 0);
+        try testing.expectError(error.NotAFile, handleRead(&empty, node, 0, 0, 0, 0));
+
+        // User buffer is too big
+        const name2 = try buffer_allocator.dupe(u8, "/file.txt");
+        const node2 = try handleOpen(&empty, @ptrToInt(name2.ptr), name2.len, @enumToInt(vfs.OpenFlags.CREATE_FILE), 0, 0);
+        scheduler.current_task.kernel = false;
+        try testing.expectError(Error.TooBig, handleRead(&empty, node2, 0, USER_MAX_DATA_LEN + 1, 0, 0));
+    }
+    try testing.expect(!testing.allocator_instance.detectLeaks());
 }
 
 test "handleOpen errors" {
