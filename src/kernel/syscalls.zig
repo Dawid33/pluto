@@ -81,6 +81,19 @@ pub const Syscall = enum {
     ///     Refer to vfs.FileNode.read and vmm.VirtualMemoryManager.copyData for details on what causes other errors
     ///
     Write,
+    ///
+    /// Close an open vfs node. What it means to "close" depends on the underlying file system, but often it will cause the file to be committed to disk or for a network socket to be closed
+    ///
+    /// Arguments:
+    ///     node_handle: usize  - The handle to close
+    ///     ignored1..4: usize  - Ignored
+    ///
+    /// Return: void
+    ///
+    /// Error:
+    ///     OutOfBounds         - The node handle is outside of the maximum per process
+    ///     NotOpened           - The node handle hasn't been opened
+    Close,
     Test1,
     Test2,
     Test3,
@@ -99,6 +112,7 @@ pub const Syscall = enum {
             .Open => handleOpen,
             .Read => handleRead,
             .Write => handleWrite,
+            .Close => handleClose,
             .Test1 => handleTest1,
             .Test2 => handleTest2,
             .Test3 => handleTest3,
@@ -350,6 +364,42 @@ fn handleWrite(ctx: *const arch.CpuState, node_handle: usize, buff_ptr: usize, b
     return error.NotOpened;
 }
 
+///
+/// Close an open vfs node. What it means to "close" depends on the underlying file system, but often it will cause the file to be committed to disk or for a network socket to be closed
+///
+/// Arguments:
+///     node_handle: usize  - The handle to close
+///     ignored1..4: usize  - Ignored
+///
+/// Return: void
+///
+/// Error:
+///     OutOfBounds         - The node handle is outside of the maximum per process
+///     NotOpened           - The node handle hasn't been opened
+fn handleClose(ctx: *const arch.CpuState, node_handle: usize, ignored1: usize, ignored2: usize, ignored3: usize, ignored4: usize) anyerror!usize {
+    _ = ctx;
+    _ = ignored1;
+    _ = ignored2;
+    _ = ignored3;
+    _ = ignored4;
+    if (node_handle >= task.VFS_HANDLES_PER_PROCESS)
+        return error.OutOfBounds;
+    const real_handle = @intCast(task.Handle, node_handle);
+    const current_task = scheduler.current_task;
+    const node_opt = current_task.getVFSHandle(real_handle) catch panic(@errorReturnTrace(), "Failed to get VFS node for handle {}\n", .{real_handle});
+    if (node_opt) |node| {
+        current_task.clearVFSHandle(real_handle) catch |e| return switch (e) {
+            error.VFSHandleNotSet, error.OutOfBounds => error.NotOpened,
+        };
+        switch (node.*) {
+            .File => |f| f.close(),
+            .Dir => |d| d.close(),
+            .Symlink => |s| s.close(),
+        }
+    }
+    return error.NotOpened;
+}
+
 pub fn handleTest1(ctx: *const arch.CpuState, arg1: usize, arg2: usize, arg3: usize, arg4: usize, arg5: usize) anyerror!usize {
     // Suppress unused variable warnings
     _ = ctx;
@@ -413,6 +463,7 @@ test "getHandler" {
     try std.testing.expectEqual(Syscall.Test2.getHandler(), handleTest2);
     try std.testing.expectEqual(Syscall.Test3.getHandler(), handleTest3);
     try std.testing.expectEqual(Syscall.Open.getHandler(), handleOpen);
+    try std.testing.expectEqual(Syscall.Close.getHandler(), handleClose);
     try std.testing.expectEqual(Syscall.Read.getHandler(), handleRead);
     try std.testing.expectEqual(Syscall.Write.getHandler(), handleWrite);
 }
