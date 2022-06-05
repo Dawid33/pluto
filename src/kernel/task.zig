@@ -25,12 +25,7 @@ pub const EntryPoint = usize;
 const PidBitmap = bitmap.Bitmap(1024, usize);
 
 /// The list of PIDs that have been allocated.
-var all_pids: PidBitmap = init: {
-    var pids = PidBitmap.init(1024, null) catch unreachable;
-    // Reserve PID 0 for the init task
-    _ = pids.setFirstFree() orelse unreachable;
-    break :init pids;
-};
+var all_pids = PidBitmap.init(1024, null) catch unreachable;
 
 /// The default stack size of a task. Currently this is set to a page size.
 pub const STACK_SIZE: u32 = arch.MEMORY_BLOCK_SIZE / @sizeOf(u32);
