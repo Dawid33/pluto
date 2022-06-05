@@ -62,6 +62,25 @@ pub const Syscall = enum {
     ///     Refer to vfs.FileNode.read and vmm.VirtualMemoryManager.copyData for details on what causes other errors
     ///
     Read,
+    /// Write data from to open vfs file
+    ///
+    /// Arguments:
+    ///     node_handle: usize  - The file handle returned from the open syscall
+    ///     buff_ptr: usize `   - The user/kernel address of the buffer containing the data to write
+    ///     buff_len: usize     - The size of the buffer
+    ///     ignored1: usize     - Ignored
+    ///     ignored2: usize     - Ignored
+    ///
+    /// Return: usize
+    ///     The number of bytes written
+    ///
+    /// Error:
+    ///     OutOfBounds         - The node handle is outside of the maximum per process
+    ///     TooBig              - The buffer is bigger than what a user process is allowed to give the kernel
+    ///     NotAFile            - The handle does not correspond to a file
+    ///     Refer to vfs.FileNode.read and vmm.VirtualMemoryManager.copyData for details on what causes other errors
+    ///
+    Write,
     Test1,
     Test2,
     Test3,
@@ -79,6 +98,7 @@ pub const Syscall = enum {
         return switch (self) {
             .Open => handleOpen,
             .Read => handleRead,
+            .Write => handleWrite,
             .Test1 => handleTest1,
             .Test2 => handleTest2,
             .Test3 => handleTest3,
@@ -286,6 +306,50 @@ fn handleRead(ctx: *const arch.CpuState, node_handle: usize, buff_ptr: usize, bu
     return error.NotOpened;
 }
 
+/// Write data from to open vfs file
+///
+/// Arguments:
+///     node_handle: usize  - The file handle returned from the open syscall
+///     buff_ptr: usize `   - The user/kernel address of the buffer containing the data to write
+///     buff_len: usize     - The size of the buffer
+///     ignored1: usize     - Ignored
+///     ignored2: usize     - Ignored
+///
+/// Return: usize
+///     The number of bytes written
+///
+/// Error:
+///     OutOfBounds         - The node handle is outside of the maximum per process
+///     TooBig              - The buffer is bigger than what a user process is allowed to give the kernel
+///     NotAFile            - The handle does not correspond to a file
+///     NotOpened           - The handle doesn't correspond to an opened file
+///     Refer to vfs.FileNode.read and vmm.VirtualMemoryManager.copyData for details on what causes other errors
+///
+fn handleWrite(ctx: *const arch.CpuState, node_handle: usize, buff_ptr: usize, buff_len: usize, ignored1: usize, ignored2: usize) anyerror!usize {
+    _ = ctx;
+    _ = ignored1;
+    _ = ignored2;
+    if (node_handle >= task.VFS_HANDLES_PER_PROCESS)
+        return error.OutOfBounds;
+    const real_handle = @intCast(task.Handle, node_handle);
+
+    const current_task = scheduler.current_task;
+    const node_opt = current_task.getVFSHandle(real_handle) catch panic(@errorReturnTrace(), "Failed to get VFS node for handle {}\n", .{real_handle});
+    if (node_opt) |node| {
+        const file = switch (node.*) {
+            .File => |*f| f,
+            else => return error.NotAFile,
+        };
+
+        // TODO: A more performant method would be mapping in the user memory and using that directly. Then we wouldn't need to allocate or copy the buffer
+        var buff = try getData(buff_ptr, buff_len);
+        defer if (!current_task.kernel) allocator.free(buff);
+        return try file.write(buff);
+    }
+
+    return error.NotOpened;
+}
+
 pub fn handleTest1(ctx: *const arch.CpuState, arg1: usize, arg2: usize, arg3: usize, arg4: usize, arg5: usize) anyerror!usize {
     // Suppress unused variable warnings
     _ = ctx;
@@ -350,6 +414,7 @@ test "getHandler" {
     try std.testing.expectEqual(Syscall.Test3.getHandler(), handleTest3);
     try std.testing.expectEqual(Syscall.Open.getHandler(), handleOpen);
     try std.testing.expectEqual(Syscall.Read.getHandler(), handleRead);
+    try std.testing.expectEqual(Syscall.Write.getHandler(), handleWrite);
 }
 
 test "handle" {
@@ -522,6 +587,89 @@ test "handleRead errors" {
         const node2 = try handleOpen(&empty, @ptrToInt(name2.ptr), name2.len, @enumToInt(vfs.OpenFlags.CREATE_FILE), 0, 0);
         scheduler.current_task.kernel = false;
         try testing.expectError(Error.TooBig, handleRead(&empty, node2, 0, USER_MAX_DATA_LEN + 1, 0, 0));
+    }
+    try testing.expect(!testing.allocator_instance.detectLeaks());
+}
+
+test "handleWrite" {
+    allocator = std.testing.allocator;
+    var testfs = try vfs.testInitFs(allocator);
+    defer allocator.destroy(testfs);
+    defer testfs.deinit();
+
+    testfs.instance = 1;
+    try vfs.setRoot(testfs.tree.val);
+
+    var fixed_buffer_allocator = try testInitMem(1, allocator, true);
+    var buffer_allocator = fixed_buffer_allocator.allocator();
+    defer testDeinitMem(allocator, fixed_buffer_allocator);
+
+    scheduler.current_task = try task.Task.create(0, true, &vmm.kernel_vmm, allocator);
+    defer scheduler.current_task.destroy(allocator);
+
+    const empty = arch.CpuState.empty();
+
+    // Open test file
+    const name = try buffer_allocator.dupe(u8, "/abc.txt");
+    const node = try handleOpen(&empty, @ptrToInt(name.ptr), name.len, @enumToInt(vfs.OpenFlags.CREATE_FILE), 0, undefined);
+
+    // Write
+    const data = try buffer_allocator.dupe(u8, "test_data 123");
+    const res = try handleWrite(&empty, node, @ptrToInt(data.ptr), data.len, 0, 0);
+    try testing.expectEqual(res, data.len);
+    try testing.expectEqualSlices(u8, data, testfs.tree.children.items[0].data.?);
+
+    // Write to a file in a folder
+    const name2 = try buffer_allocator.dupe(u8, "/dir");
+    _ = try handleOpen(&empty, @ptrToInt(name2.ptr), name2.len, @enumToInt(vfs.OpenFlags.CREATE_DIR), 0, undefined);
+    const name3 = try buffer_allocator.dupe(u8, "/dir/def.txt");
+    const node3 = try handleOpen(&empty, @ptrToInt(name3.ptr), name3.len, @enumToInt(vfs.OpenFlags.CREATE_FILE), 0, undefined);
+    const data2 = try buffer_allocator.dupe(u8, "some more test data!");
+    const res2 = try handleWrite(&empty, node3, @ptrToInt(data2.ptr), data2.len, 0, 0);
+    try testing.expectEqual(res2, data2.len);
+    try testing.expectEqualSlices(u8, data2, testfs.tree.children.items[1].children.items[0].data.?);
+}
+
+test "handleWrite errors" {
+    allocator = std.testing.allocator;
+    var testfs = try vfs.testInitFs(allocator);
+    {
+        defer allocator.destroy(testfs);
+        defer testfs.deinit();
+
+        testfs.instance = 1;
+        try vfs.setRoot(testfs.tree.val);
+
+        const empty = arch.CpuState.empty();
+
+        // The data we pass to handleWrite needs to be mapped within the VMM, so we need to know their address
+        // Allocating the data within a fixed buffer allocator is the best way to know the address of the data
+        var fixed_buffer_allocator = try testInitMem(3, allocator, true);
+        var buffer_allocator = fixed_buffer_allocator.allocator();
+        defer testDeinitMem(allocator, fixed_buffer_allocator);
+
+        scheduler.current_task = try task.Task.create(0, true, &vmm.kernel_vmm, allocator);
+        defer scheduler.current_task.destroy(allocator);
+
+        // Invalid file handle
+        try testing.expectError(error.OutOfBounds, handleWrite(&empty, task.VFS_HANDLES_PER_PROCESS, 0, 0, 0, 0));
+        try testing.expectError(error.OutOfBounds, handleWrite(&empty, task.VFS_HANDLES_PER_PROCESS + 1, 0, 0, 0, 0));
+
+        // Unopened file
+        try testing.expectError(error.NotOpened, handleWrite(&empty, 0, 0, 0, 0, 0));
+        try testing.expectError(error.NotOpened, handleWrite(&empty, 1, 0, 0, 0, 0));
+        try testing.expectError(error.NotOpened, handleWrite(&empty, task.VFS_HANDLES_PER_PROCESS - 1, 0, 0, 0, 0));
+
+        // Writing to a dir
+        const name = try buffer_allocator.dupe(u8, "/dir");
+        const node = try handleOpen(&empty, @ptrToInt(name.ptr), name.len, @enumToInt(vfs.OpenFlags.CREATE_DIR), 0, 0);
+        try testing.expectError(error.NotAFile, handleWrite(&empty, node, 0, 0, 0, 0));
+
+        // User buffer is too big
+        const name2 = try buffer_allocator.dupe(u8, "/file.txt");
+        const node2 = try handleOpen(&empty, @ptrToInt(name2.ptr), name2.len, @enumToInt(vfs.OpenFlags.CREATE_FILE), 0, 0);
+        scheduler.current_task.kernel = false;
+        try testing.expectError(Error.TooBig, handleWrite(&empty, node2, 0, USER_MAX_DATA_LEN + 1, 0, 0));
     }
     try testing.expect(!testing.allocator_instance.detectLeaks());
 }
