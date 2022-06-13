@@ -13,7 +13,7 @@ let
         patchShebangs .
         makeiso.sh
       '';
-    buildInputs = [ unstable.zig pkgs.xorriso pkgs.grub pkgs.stdenv pkgs.which pkgs.grub2 ];
+    buildInputs = [ unstable.zig pkgs.xorriso pkgs.stdenv pkgs.which pkgs.grub2 ];
     buildPhase = ''
       export XDG_CACHE_HOME=".cache"
       patchShebangs ./makeiso.sh
