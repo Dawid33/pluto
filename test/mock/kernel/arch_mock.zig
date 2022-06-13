@@ -1,18 +1,19 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
-const mem = @import("../../../src/kernel/mem.zig");
+const mem = @import("pluto").mem;
 const MemProfile = mem.MemProfile;
 const pci = @import("pci_mock.zig");
-const gdt = @import("gdt_mock.zig");
+pub const gdt = @import("gdt_mock.zig");
 const idt = @import("idt_mock.zig");
-const vmm = @import("../../../src/kernel/vmm.zig");
+const vmm = @import("pluto").vmm;
 const paging = @import("paging_mock.zig");
-const Serial = @import("../../../src/kernel/serial.zig").Serial;
-const TTY = @import("../../../src/kernel/tty.zig").TTY;
-const Keyboard = @import("../../../src/kernel/keyboard.zig").Keyboard;
-const task = @import("../../../src/kernel/task.zig");
-const x86_paging = @import("../../../src/kernel/arch/x86/paging.zig");
+const Serial = @import("pluto").serial.Serial;
+const TTY = @import("pluto").tty.TTY;
+const Keyboard = @import("pluto").keyboard.Keyboard;
+const task = @import("pluto").task;
+const x86_paging = @import("arch").paging;
+pub const cmos = @import("cmos_mock.zig");
 
 pub const Device = pci.PciDeviceInfo;
 pub const DateTime = struct {

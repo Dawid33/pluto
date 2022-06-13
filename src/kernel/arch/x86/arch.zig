@@ -7,7 +7,7 @@ const gdt = @import("gdt.zig");
 const idt = @import("idt.zig");
 const irq = @import("irq.zig");
 const isr = @import("isr.zig");
-const paging = @import("paging.zig");
+pub const paging = @import("paging.zig");
 const pic = @import("pic.zig");
 const pci = @import("pci.zig");
 const pit = @import("pit.zig");
@@ -16,15 +16,15 @@ const serial = @import("serial.zig");
 const syscalls = @import("syscalls.zig");
 const tty = @import("tty.zig");
 const vga = @import("vga.zig");
-const mem = @import("../../mem.zig");
+const mem = @import("pluto").mem;
 const multiboot = @import("multiboot.zig");
-const vmm = @import("../../vmm.zig");
+const vmm = @import("pluto").vmm;
 const keyboard = @import("keyboard.zig");
-const Serial = @import("../../serial.zig").Serial;
-const panic = @import("../../panic.zig").panic;
-const TTY = @import("../../tty.zig").TTY;
-const Keyboard = @import("../../keyboard.zig").Keyboard;
-const Task = @import("../../task.zig").Task;
+const Keyboard = @import("pluto").keyboard.Keyboard;
+const Serial = @import("pluto").serial.Serial;
+const panic = @import("pluto").panic_root.panic;
+const TTY = @import("pluto").tty.TTY;
+const Task = @import("pluto").task.Task;
 const MemProfile = mem.MemProfile;
 
 /// The type of a device.
@@ -525,7 +525,7 @@ pub fn initMem(mb_info: BootPayload) Allocator.Error!MemProfile {
 /// Error: std.mem.Allocator.Error
 ///     OutOfMemory - There wasn't enough memory to allocate what was needed
 ///
-pub fn initKeyboard(allocator: Allocator) Allocator.Error!*Keyboard {
+pub fn initKeyboard(allocator: Allocator) Allocator.Error!*keyboard.Keyboard {
     return keyboard.init(allocator);
 }
 

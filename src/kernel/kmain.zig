@@ -1,22 +1,22 @@
 const std = @import("std");
+pub const pluto = @import("pluto");
+pub const tty = pluto.tty;
+pub const panic_root = pluto.panic_root;
+pub const log_root = pluto.log_root;
+pub const heap = pluto.heap;
+pub const serial = pluto.serial;
+pub const pmm = pluto.pmm;
+pub const vmm = pluto.vmm;
+pub const keyboard = pluto.keyboard;
+pub const initrd = pluto.initrd;
+pub const vfs = pluto.vfs;
+pub const scheduler = pluto.scheduler;
+pub const task = pluto.task;
+const arch = @import("arch");
 const kmain_log = std.log.scoped(.kmain);
 const builtin = @import("builtin");
 const is_test = builtin.is_test;
 const build_options = @import("build_options");
-const arch = @import("arch.zig").internals;
-const tty = @import("tty.zig");
-const log_root = @import("log.zig");
-const pmm = @import("pmm.zig");
-const serial = @import("serial.zig");
-const vmm = @import("vmm.zig");
-const mem = @import("mem.zig");
-const panic_root = @import("panic.zig");
-const task = @import("task.zig");
-const heap = @import("heap.zig");
-const scheduler = @import("scheduler.zig");
-const vfs = @import("filesystem/vfs.zig");
-const initrd = @import("filesystem/initrd.zig");
-const keyboard = @import("keyboard.zig");
 const Allocator = std.mem.Allocator;
 
 comptime {
@@ -58,7 +58,7 @@ pub fn log(
 
 var kernel_heap: heap.FreeListAllocator = undefined;
 
-export fn kmain(boot_payload: arch.BootPayload) void {
+pub export fn kmain(boot_payload: arch.BootPayload) void {
     const serial_stream = serial.init(boot_payload);
     log_root.init(serial_stream);
 

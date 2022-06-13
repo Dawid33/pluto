@@ -7,9 +7,9 @@ const log = std.log.scoped(.x86_keyboard);
 const irq = @import("irq.zig");
 const pic = @import("pic.zig");
 const arch = if (builtin.is_test) @import("../../../../test/mock/kernel/arch_mock.zig") else @import("arch.zig");
-const panic = @import("../../panic.zig").panic;
-const kb = @import("../../keyboard.zig");
-const Keyboard = kb.Keyboard;
+const panic = @import("pluto").panic_root.panic;
+const kb = @import("pluto").keyboard;
+pub const Keyboard = kb.Keyboard;
 const KeyPosition = kb.KeyPosition;
 const KeyAction = kb.KeyAction;
 
