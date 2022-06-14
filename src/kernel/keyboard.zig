@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
-const arch = @import("arch.zig").internals;
+const arch = @import("arch");
 
 /// An arbitrary number of keys to remember before dropping any more that arrive. Is a power of two so we can use nice overflowing addition
 pub const QUEUE_SIZE = 32;

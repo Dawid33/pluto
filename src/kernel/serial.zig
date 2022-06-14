@@ -1,4 +1,4 @@
-const arch = @import("arch.zig").internals;
+const arch = @import("arch");
 const build_options = @import("build_options");
 
 pub const Serial = struct {
@@ -29,8 +29,9 @@ pub const Serial = struct {
 /// Return: Serial
 ///     The serial interface constructed by the architecture
 ///
-pub fn init(boot_payload: arch.BootPayload) Serial {
+pub fn init(boot_payload: arch.BootPayload) !Serial {
     const serial = arch.initSerial(boot_payload);
+
     switch (build_options.test_mode) {
         .Initialisation => runtimeTests(serial),
         else => {},

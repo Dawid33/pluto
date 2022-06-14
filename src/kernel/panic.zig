@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = std.builtin;
-const arch = @import("arch.zig").internals;
+const arch = @import("arch");
 const mem = @import("mem.zig");
 const build_options = @import("build_options");
 const ArrayList = std.ArrayList;

@@ -16,15 +16,17 @@ const serial = @import("serial.zig");
 const syscalls = @import("syscalls.zig");
 const tty = @import("tty.zig");
 const vga = @import("vga.zig");
-const mem = @import("pluto").mem;
+
+const mem = @import("root").pluto.mem;
 const multiboot = @import("multiboot.zig");
-const vmm = @import("pluto").vmm;
+const vmm = @import("root").pluto.vmm;
 const keyboard = @import("keyboard.zig");
-const Keyboard = @import("pluto").keyboard.Keyboard;
-const Serial = @import("pluto").serial.Serial;
-const panic = @import("pluto").panic_root.panic;
-const TTY = @import("pluto").tty.TTY;
-const Task = @import("pluto").task.Task;
+const Keyboard = @import("root").pluto.keyboard.Keyboard;
+const Serial = @import("root").pluto.serial.Serial;
+const panic = @import("root").pluto.panic_root.panic;
+const TTY = @import("root").pluto.tty.TTY;
+const Task = @import("root").pluto.task.Task;
+
 const MemProfile = mem.MemProfile;
 
 /// The type of a device.

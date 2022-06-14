@@ -12,7 +12,7 @@ const arch = @import("arch");
 const vfs = @import("vfs.zig");
 const mem = @import("../mem.zig");
 const CodePage = @import("../code_page/code_page.zig").CodePage;
-const mkfat32 = @import("../../../mkfat32.zig");
+const mkfat32 = @import("mkfat32.zig");
 
 /// The boot record for FAT32. This is use for parsing the initial boot sector to extract the
 /// relevant information for todays FAT32.

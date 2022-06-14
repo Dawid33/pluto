@@ -7,8 +7,8 @@ const arch = if (is_test) @import("../../../../test/mock/kernel/arch_mock.zig") 
 const testing = std.testing;
 const expect = std.testing.expect;
 const isr = @import("isr.zig");
-const panic = @import("pluto").panic_root.panic;
-const syscalls = @import("pluto").syscalls;
+const panic = @import("root").pluto.panic_root.panic;
+const syscalls = @import("root").pluto.syscalls;
 
 /// The isr number associated with syscalls
 pub const INTERRUPT: u16 = 0x80;

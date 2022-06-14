@@ -1,18 +1,20 @@
 const std = @import("std");
 pub const pluto = @import("pluto");
-pub const tty = pluto.tty;
-pub const panic_root = pluto.panic_root;
-pub const log_root = pluto.log_root;
-pub const heap = pluto.heap;
-pub const serial = pluto.serial;
-pub const pmm = pluto.pmm;
-pub const vmm = pluto.vmm;
-pub const keyboard = pluto.keyboard;
-pub const initrd = pluto.initrd;
-pub const vfs = pluto.vfs;
-pub const scheduler = pluto.scheduler;
-pub const task = pluto.task;
+pub const arch_mock = @import("arch_mock");
+const tty = pluto.tty;
+const panic_root = pluto.panic_root;
+const log_root = pluto.log_root;
+const heap = pluto.heap;
+const serial = pluto.serial;
+const pmm = pluto.pmm;
+const vmm = pluto.vmm;
+const keyboard = pluto.keyboard;
+const initrd = pluto.initrd;
+const vfs = pluto.vfs;
+const scheduler = pluto.scheduler;
+const task = pluto.task;
 const arch = @import("arch");
+const common = @import("arch_common");
 const kmain_log = std.log.scoped(.kmain);
 const builtin = @import("builtin");
 const is_test = builtin.is_test;
@@ -59,7 +61,7 @@ pub fn log(
 var kernel_heap: heap.FreeListAllocator = undefined;
 
 pub export fn kmain(boot_payload: arch.BootPayload) void {
-    const serial_stream = serial.init(boot_payload);
+    const serial_stream = try serial.init(boot_payload);
     log_root.init(serial_stream);
 
     const mem_profile = arch.initMem(boot_payload) catch |e| {

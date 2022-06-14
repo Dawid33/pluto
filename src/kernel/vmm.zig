@@ -9,7 +9,7 @@ const pmm = @import("pmm.zig");
 const mem = @import("mem.zig");
 const tty = @import("tty.zig");
 const panic = @import("panic.zig").panic;
-const arch = @import("arch.zig").internals;
+const arch = @import("arch");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 

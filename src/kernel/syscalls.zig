@@ -2,7 +2,7 @@ const std = @import("std");
 const scheduler = @import("scheduler.zig");
 const panic = @import("panic.zig").panic;
 const log = std.log.scoped(.syscalls);
-const arch = @import("arch.zig").internals;
+const arch = @import("arch");
 
 /// A compilation of all errors that syscall handlers could return.
 pub const Error = error{OutOfMemory};

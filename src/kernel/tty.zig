@@ -3,7 +3,7 @@ const fmt = std.fmt;
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.tty);
 const build_options = @import("build_options");
-const arch = @import("arch.zig").internals;
+const arch = @import("arch");
 const panic = @import("panic.zig").panic;
 
 /// The OutStream for the format function

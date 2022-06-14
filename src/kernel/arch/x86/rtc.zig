@@ -10,7 +10,7 @@ const arch = if (is_test) @import("arch_mock") else @import("arch.zig");
 const pic = @import("pic.zig");
 const pit = @import("pit.zig");
 const irq = @import("irq.zig");
-const cmos = if (is_test) @import("arch_mock").cmos else @import("cmos.zig");
+const cmos = if (is_test) @import("root").arch_mock.cmos else @import("cmos.zig");
 const panic = @import("../../panic.zig").panic;
 const scheduler = @import("../../scheduler.zig");
 

@@ -13,7 +13,7 @@ const File = fs.File;
 const Mode = std.builtin.Mode;
 const TestMode = rt.TestMode;
 const ArrayList = std.ArrayList;
-const Fat32 = @import("mkfat32.zig").Fat32;
+const Fat32 = @import("src/kernel/filesystem/mkfat32.zig").Fat32;
 const Pkg = std.build.Pkg;
 
 const x86_i686 = CrossTarget{
@@ -31,7 +31,6 @@ pub fn build(b: *Builder) !void {
 
     const fmt_step = b.addFmt(&[_][]const u8{
         "build.zig",
-        "mkfat32.zig",
         "src",
         "test",
     });
@@ -40,9 +39,9 @@ pub fn build(b: *Builder) !void {
     const main_src = "src/kernel/kmain.zig";
     const pluto_src = "src/kernel/pluto.zig";
     const arch_mock_src = "test/mock/kernel/arch_mock.zig";
-    const arch_root = "src/kernel/arch";
-    const arch_path = try fs.path.join(b.allocator, &[_][]const u8{ arch_root, "/", arch, "/arch.zig" });
-    const linker_script_path = try fs.path.join(b.allocator, &[_][]const u8{ arch_root, arch, "link.ld" });
+    const arch_path = "src/kernel/arch";
+    const arch_src = try fs.path.join(b.allocator, &[_][]const u8{ arch_path, "/", arch, "/arch.zig" });
+    const linker_script_path = try fs.path.join(b.allocator, &[_][]const u8{ arch_path, arch, "link.ld" });
     const output_iso = try fs.path.join(b.allocator, &[_][]const u8{ b.install_path, "pluto.iso" });
     const iso_dir_path = try fs.path.join(b.allocator, &[_][]const u8{ b.install_path, "iso" });
     const boot_path = try fs.path.join(b.allocator, &[_][]const u8{ b.install_path, "iso", "boot" });
@@ -71,14 +70,12 @@ pub fn build(b: *Builder) !void {
     exec.setBuildMode(build_mode);
     exec.setLinkerScriptPath(std.build.FileSource{ .path = linker_script_path });
     exec.setTarget(target);
-
-    const kernel_pkg = Pkg{ .name = "pluto", .path = .{ .path = pluto_src }, .dependencies = &[_]Pkg{exec_options.getPackage("build_options")} };
-    const arch_mock = Pkg{ .name = "arch_mock", .path = .{ .path = arch_mock_src }, .dependencies = &[_]Pkg{ kernel_pkg, exec_options
-        .getPackage("build_options") } };
-    const arch_pkg = Pkg{ .name = "arch", .path = .{ .path = arch_path }, .dependencies = &[_]Pkg{ kernel_pkg, arch_mock, exec_options
-        .getPackage("build_options") } };
+    const arch_pkg = Pkg{ .name = "arch", .path = .{ .path = arch_src }, .dependencies = &[_]Pkg{exec_options.getPackage("build_options")} };
+    const kernel_pkg = Pkg{ .name = "pluto", .path = .{ .path = pluto_src }, .dependencies = &[_]Pkg{ arch_pkg, exec_options.getPackage("build_options") } };
+    const arch_mock_pkg = Pkg{ .name = "arch_mock", .path = .{ .path = arch_mock_src }, .dependencies = &[_]Pkg{ arch_pkg, kernel_pkg, exec_options.getPackage("build_options") } };
     exec.addPackage(kernel_pkg);
     exec.addPackage(arch_pkg);
+    exec.addPackage(arch_mock_pkg);
 
     const make_iso = switch (target.getCpuArch()) {
         .i386 => b.addSystemCommand(&[_][]const u8{ "./makeiso.sh", boot_path, modules_path, iso_dir_path, exec_output_path, ramdisk_path, output_iso }),
@@ -100,9 +97,6 @@ pub fn build(b: *Builder) !void {
         inline for (&[_][]const u8{ "user_program_data", "user_program" }) |user_program| {
             // Add some test files for the user mode runtime tests
             const user_program_step = b.addExecutable(user_program ++ ".elf", null);
-            user_program_step.addPackage(kernel_pkg);
-            user_program_step.addPackage(arch_mock);
-            user_program_step.addPackage(arch_pkg);
             user_program_step.setLinkerScriptPath(.{ .path = "test/user_program.ld" });
             user_program_step.addAssemblyFile("test/" ++ user_program ++ ".s");
             user_program_step.setOutputDir(b.install_path);
@@ -123,14 +117,13 @@ pub fn build(b: *Builder) !void {
     const test_step = b.step("test", "Run tests");
     const unit_tests = b.addTest(main_src);
     unit_tests.setBuildMode(build_mode);
-    unit_tests.setMainPkgPath(".");
     const unit_test_options = b.addOptions();
     unit_tests.addOptions("build_options", unit_test_options);
     unit_test_options.addOption(TestMode, "test_mode", test_mode);
     unit_tests.setTarget(.{ .cpu_arch = target.cpu_arch });
     unit_tests.addPackage(kernel_pkg);
     unit_tests.addPackage(arch_pkg);
-    unit_tests.addPackage(arch_mock);
+    unit_tests.addPackage(arch_mock_pkg);
 
     if (builtin.os.tag != .windows) {
         b.enable_qemu = true;
