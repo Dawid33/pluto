@@ -75,7 +75,6 @@ pub fn build(b: *Builder) !void {
     const arch_mock_pkg = Pkg{ .name = "arch_mock", .path = .{ .path = arch_mock_src }, .dependencies = &[_]Pkg{ arch_pkg, kernel_pkg, exec_options.getPackage("build_options") } };
     exec.addPackage(kernel_pkg);
     exec.addPackage(arch_pkg);
-    exec.addPackage(arch_mock_pkg);
 
     const make_iso = switch (target.getCpuArch()) {
         .i386 => b.addSystemCommand(&[_][]const u8{ "./makeiso.sh", boot_path, modules_path, iso_dir_path, exec_output_path, ramdisk_path, output_iso }),
