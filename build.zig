@@ -71,9 +71,9 @@ pub fn build(b: *Builder) !void {
     exec.setLinkerScriptPath(std.build.FileSource{ .path = linker_script_path });
     exec.setTarget(target);
     const arch_pkg = Pkg{ .name = "arch", .path = .{ .path = arch_src }, .dependencies = &[_]Pkg{exec_options.getPackage("build_options")} };
-    const kernel_pkg = Pkg{ .name = "pluto", .path = .{ .path = pluto_src }, .dependencies = &[_]Pkg{ arch_pkg, exec_options.getPackage("build_options") } };
-    const arch_mock_pkg = Pkg{ .name = "arch_mock", .path = .{ .path = arch_mock_src }, .dependencies = &[_]Pkg{ arch_pkg, kernel_pkg, exec_options.getPackage("build_options") } };
-    exec.addPackage(kernel_pkg);
+    const pluto_pkg = Pkg{ .name = "pluto", .path = .{ .path = pluto_src }, .dependencies = &[_]Pkg{ arch_pkg, exec_options.getPackage("build_options") } };
+    const arch_mock_pkg = Pkg{ .name = "arch_mock", .path = .{ .path = arch_mock_src }, .dependencies = &[_]Pkg{ arch_pkg, pluto_pkg, exec_options.getPackage("build_options") } };
+    exec.addPackage(pluto_pkg);
     exec.addPackage(arch_pkg);
 
     const make_iso = switch (target.getCpuArch()) {
@@ -114,13 +114,14 @@ pub fn build(b: *Builder) !void {
     b.default_step.dependOn(&make_iso.step);
 
     const test_step = b.step("test", "Run tests");
-    const unit_tests = b.addTest(main_src);
+    const unit_tests = b.addTest(pluto_src);
     unit_tests.setBuildMode(build_mode);
+    // unit_tests.setMainPkgPath("src/kernel");
     const unit_test_options = b.addOptions();
     unit_tests.addOptions("build_options", unit_test_options);
     unit_test_options.addOption(TestMode, "test_mode", test_mode);
-    unit_tests.setTarget(.{ .cpu_arch = target.cpu_arch });
-    unit_tests.addPackage(kernel_pkg);
+    unit_tests.setTarget(target);
+    unit_tests.addPackage(pluto_pkg);
     unit_tests.addPackage(arch_pkg);
     unit_tests.addPackage(arch_mock_pkg);
 
@@ -130,7 +131,7 @@ pub fn build(b: *Builder) !void {
 
     // Run the mock gen
     const mock_gen = b.addExecutable("mock_gen", "test/gen_types.zig");
-    // mock_gen.setMainPkgPath(".");
+    mock_gen.setMainPkgPath(".");
     const mock_gen_run = mock_gen.run();
     unit_tests.step.dependOn(&mock_gen_run.step);
 
